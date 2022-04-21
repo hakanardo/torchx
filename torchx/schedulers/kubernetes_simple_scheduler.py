@@ -375,29 +375,11 @@ def app_to_resource(
         replica_id=str(0),
         rank0_env="notsupported",
     )
-    role_idx = 0
-    replica_id = 0
-    name = cleanup_str(f"{role.name}-{replica_id}")
+    name = cleanup_str(f"{role.name}")
     replica_role = values.apply(role)
 
     pod = role_to_pod(name, replica_role, service_account)
-    pod.metadata.labels.update(pod_labels(app, role_idx, role, replica_id))
-
-    task: Dict[str, Any] = {
-        "replicas": 1,
-        "name": name,
-        "template": pod,
-        "minAvailable": 0,
-    }
-    if role.max_retries > 0:
-        task["maxRetry"] = role.max_retries
-        task["policies"] = RETRY_POLICIES[role.retry_policy]
-        msg = f"""
-Role {role.name} configured with restarts: {role.max_retries}. As of 1.4.0 Volcano
-does NOT support retries correctly. More info: https://github.com/volcano-sh/volcano/issues/1651
-        """
-        warnings.warn(msg)
-    tasks.append(task)
+    pod.metadata.labels.update(pod_labels(app, 0, role, 0))
 
     from kubernetes.client.models import (  # noqa: F811 redefinition of unused
         V1PodTemplateSpec,
@@ -408,36 +390,18 @@ does NOT support retries correctly. More info: https://github.com/volcano-sh/vol
 
     job_retries = min(role.max_retries for role in app.roles)
 
-    job = V1Job(
+    resource = V1Job(
         metadata=V1ObjectMeta(
             name=unique_app_id,
         ),
         spec=V1JobSpec(
-            backoff_limit=job_retries,
+            #backoff_limit=job_retries,
             template=V1PodTemplateSpec(
                 metadata=pod.metadata,
                 spec=pod.spec,
             ),
         ),
     )
-
-    resource: Dict[str, object] = {
-        "apiVersion": "batch.volcano.sh/v1alpha1",
-        "kind": "Job",
-        "metadata": {"name": f"{unique_app_id}"},
-        "spec": {
-            "schedulerName": "volcano",
-            "queue": queue,
-            "tasks": tasks,
-            "maxRetry": job_retries,
-            "minAvailable": 0,
-            "plugins": {
-                # https://github.com/volcano-sh/volcano/issues/533
-                "svc": ["--publish-not-ready-addresses"],
-                "env": [],
-            },
-        },
-    }
     return sanitize_for_serialization(resource)
 
 
@@ -591,8 +555,8 @@ class KubernetesScheduler(Scheduler, DockerWorkspace):
         resource = dryrun_info.request.resource
         try:
             resp = self._custom_objects_api().create_namespaced_custom_object(
-                group="batch.volcano.sh",
-                version="v1alpha1",
+                group="batch",
+                version="v1",
                 namespace=namespace,
                 plural="jobs",
                 body=resource,
@@ -640,8 +604,8 @@ class KubernetesScheduler(Scheduler, DockerWorkspace):
     def _cancel_existing(self, app_id: str) -> None:
         namespace, name = app_id.split(":")
         self._custom_objects_api().delete_namespaced_custom_object(
-            group="batch.volcano.sh",
-            version="v1alpha1",
+            group="batch",
+            version="v1",
             namespace=namespace,
             plural="jobs",
             name=name,
@@ -678,8 +642,8 @@ class KubernetesScheduler(Scheduler, DockerWorkspace):
         roles = {}
         roles_statuses = {}
         resp = self._custom_objects_api().get_namespaced_custom_object_status(
-            group="batch.volcano.sh",
-            version="v1alpha1",
+            group="batch",
+            version="v1",
             namespace=namespace,
             plural="jobs",
             name=name,

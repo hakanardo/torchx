@@ -327,7 +327,6 @@ def role_to_pod(name: str, role: Role, service_account: Optional[str]) -> "V1Pod
                 # Disable the istio sidecar as it prevents the containers from
                 # exiting once finished.
                 ANNOTATION_ISTIO_SIDECAR: "false",
-                "tf-version.cloud-tpus.google.com": "2.6.0",
             },
             labels={},
         ),
@@ -364,63 +363,41 @@ def app_to_resource(
     count is set to the minimum of the max_retries of the roles.
     """
     tasks = []
-    assert len(app.roles) == 1, "kubernetes only supports one role"
-    role = app.roles[0]
-    assert role.num_replicas == 1, "kubernetes only supports one replica"
     unique_app_id = cleanup_str(make_unique(app.name))
+    for role_idx, role in enumerate(app.roles):
+        for replica_id in range(role.num_replicas):
+            values = macros.Values(
+                img_root="",
+                app_id=unique_app_id,
+                replica_id=str(replica_id),
+                rank0_env=f"VC_{cleanup_str(app.roles[0].name)}_0_HOSTS".upper(),
+            )
+            if role_idx == 0 and replica_id == 0:
+                values.rank0_env = "TORCHX_RANK0_HOST"
+            name = cleanup_str(f"{role.name}-{replica_id}")
+            replica_role = values.apply(role)
+            if role_idx == 0 and replica_id == 0:
+                replica_role.env["TORCHX_RANK0_HOST"] = "localhost"
 
-    values = macros.Values(
-        img_root="",
-        app_id=unique_app_id,
-        replica_id=str(0),
-        rank0_env="notsupported",
-    )
-    role_idx = 0
-    replica_id = 0
-    name = cleanup_str(f"{role.name}-{replica_id}")
-    replica_role = values.apply(role)
-
-    pod = role_to_pod(name, replica_role, service_account)
-    pod.metadata.labels.update(pod_labels(app, role_idx, role, replica_id))
-
-    task: Dict[str, Any] = {
-        "replicas": 1,
-        "name": name,
-        "template": pod,
-        "minAvailable": 0,
-    }
-    if role.max_retries > 0:
-        task["maxRetry"] = role.max_retries
-        task["policies"] = RETRY_POLICIES[role.retry_policy]
-        msg = f"""
+            pod = role_to_pod(name, replica_role, service_account)
+            pod.metadata.labels.update(pod_labels(app, role_idx, role, replica_id))
+            task: Dict[str, Any] = {
+                "replicas": 1,
+                "name": name,
+                "template": pod,
+                "minAvailable": 0,
+            }
+            if role.max_retries > 0:
+                task["maxRetry"] = role.max_retries
+                task["policies"] = RETRY_POLICIES[role.retry_policy]
+                msg = f"""
 Role {role.name} configured with restarts: {role.max_retries}. As of 1.4.0 Volcano
 does NOT support retries correctly. More info: https://github.com/volcano-sh/volcano/issues/1651
-        """
-        warnings.warn(msg)
-    tasks.append(task)
-
-    from kubernetes.client.models import (  # noqa: F811 redefinition of unused
-        V1PodTemplateSpec,
-        V1Job,
-        V1JobSpec,
-        V1ObjectMeta,
-    )
+                """
+                warnings.warn(msg)
+            tasks.append(task)
 
     job_retries = min(role.max_retries for role in app.roles)
-
-    job = V1Job(
-        metadata=V1ObjectMeta(
-            name=unique_app_id,
-        ),
-        spec=V1JobSpec(
-            backoff_limit=job_retries,
-            template=V1PodTemplateSpec(
-                metadata=pod.metadata,
-                spec=pod.spec,
-            ),
-        ),
-    )
-
     resource: Dict[str, object] = {
         "apiVersion": "batch.volcano.sh/v1alpha1",
         "kind": "Job",
@@ -438,7 +415,7 @@ does NOT support retries correctly. More info: https://github.com/volcano-sh/vol
             },
         },
     }
-    return sanitize_for_serialization(resource)
+    return resource
 
 
 @dataclass

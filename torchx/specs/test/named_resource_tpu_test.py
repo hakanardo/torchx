@@ -47,3 +47,27 @@ class NamedResourcesTest(unittest.TestCase):
         )
         self.assertEqual(tpu.tpu_v2_8(), want)
         self.assertEqual(tpu.NAMED_RESOURCES["tpu_v2_8"](), want)
+
+    def test_tpu_preemptible_v2_8(self) -> None:
+        want = Resource(
+            cpu=96,
+            memMB=331 * 1024,
+            gpu=0,
+            devices={
+                "cloud-tpus.google.com/preemptible-v2": 8,
+            },
+        )
+        self.assertEqual(tpu.tpu_preemptible_v2_8(), want)
+        self.assertEqual(tpu.NAMED_RESOURCES["tpu_preemptible_v2_8"](), want)
+
+    def test_tpu_preemptible_v3_8(self) -> None:
+        want = Resource(
+            cpu=96,
+            memMB=331 * 1024,
+            gpu=0,
+            devices={
+                "cloud-tpus.google.com/preemptible-v3": 8,
+            },
+        )
+        self.assertEqual(tpu.tpu_preemptible_v3_8(), want)
+        self.assertEqual(tpu.NAMED_RESOURCES["tpu_preemptible_v3_8"](), want)

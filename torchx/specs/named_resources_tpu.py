@@ -36,6 +36,7 @@ TPU_TYPES: Iterable[str] = (
     "v2-32",
     "v2-512",
     "v2-8",
+    "preemptible-v2-8",
     "v3-1024",
     "v3-128",
     "v3-2048",
@@ -44,23 +45,27 @@ TPU_TYPES: Iterable[str] = (
     "v3-512",
     "v3-64",
     "v3-8",
+    "preemptible-v3-8",
 )
 
 NAMED_RESOURCES: Dict[str, Callable[[], Resource]] = {}
 
 def _register_type(name):
-    ver, cores = name.split("-")
+    ver, _, cores = name.rpartition("-")
     device = "cloud-tpus.google.com/" + ver
     def resource() -> Resource:
         return Resource(
             cpu=96,
             memMB=331 * GiB,
             gpu=0,
+            capabilities={
+                "tf-version.cloud-tpus.google.com": "2.6.0",
+            },
             devices={
                 device: int(cores),
             },
         )
-    resource_name = f"tpu_{ver}_{cores}"
+    resource_name = f"tpu_{name.replace('-', '_')}"
     NAMED_RESOURCES[resource_name] = resource
     globals()[resource_name] = resource
 
