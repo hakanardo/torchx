@@ -347,7 +347,7 @@ def cleanup_str(data: str) -> str:
 
 
 def app_to_resource(
-    app: AppDef, queue: str, service_account: Optional[str]
+    app: AppDef, queue: str, service_account: Optional[str], priority_class: Optional[str]
 ) -> Dict[str, object]:
     """
     app_to_resource creates a volcano job kubernetes resource definition from
@@ -397,21 +397,24 @@ does NOT support retries correctly. More info: https://github.com/volcano-sh/vol
             tasks.append(task)
 
     job_retries = min(role.max_retries for role in app.roles)
+    job_spec = {
+        "schedulerName": "volcano",
+        "queue": queue,
+        "tasks": tasks,
+        "maxRetry": job_retries,
+        "plugins": {
+            # https://github.com/volcano-sh/volcano/issues/533
+            "svc": ["--publish-not-ready-addresses"],
+            "env": [],
+        }
+    }
+    if priority_class is not None:
+        job_spec['priorityClassName'] = priority_class
     resource: Dict[str, object] = {
         "apiVersion": "batch.volcano.sh/v1alpha1",
         "kind": "Job",
         "metadata": {"name": f"{unique_app_id}"},
-        "spec": {
-            "schedulerName": "volcano",
-            "queue": queue,
-            "tasks": tasks,
-            "maxRetry": job_retries,
-            "plugins": {
-                # https://github.com/volcano-sh/volcano/issues/533
-                "svc": ["--publish-not-ready-addresses"],
-                "env": [],
-            },
-        },
+        "spec": job_spec,
     }
     return resource
 
@@ -598,7 +601,12 @@ class KubernetesScheduler(Scheduler, DockerWorkspace):
             service_account, str
         ), "service_account must be a str"
 
-        resource = app_to_resource(app, queue, service_account)
+        priority_class = cfg.get("priority_class")
+        assert priority_class is None or isinstance(
+            priority_class, str
+        ), "priority_class must be a str"
+
+        resource = app_to_resource(app, queue, service_account, priority_class)
         req = KubernetesJob(
             resource=resource,
             images_to_push=images_to_push,
@@ -645,6 +653,11 @@ class KubernetesScheduler(Scheduler, DockerWorkspace):
             "service_account",
             type_=str,
             help="The service account name to set on the pod specs",
+        )
+        opts.add(
+            "priority_class",
+            type_=str,
+            help="The name of the PriorityClass to set on the job specs",
         )
         return opts
 

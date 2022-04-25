@@ -525,6 +525,22 @@ spec:
         info = scheduler._submit_dryrun(app, cfg)
         self.assertIn("service_account_name': None", str(info.request.resource))
 
+    def test_submit_dryrun_priority_class(self) -> None:
+        scheduler = create_scheduler("test")
+        self.assertIn("priority_class", scheduler.run_opts()._opts)
+        app = _test_app()
+        cfg = {
+            "queue": "testqueue",
+            "priority_class": "high",
+        }
+
+        info = scheduler._submit_dryrun(app, cfg)
+        self.assertIn("'priorityClassName': 'high'", str(info.request.resource))
+
+        del cfg["priority_class"]
+        info = scheduler._submit_dryrun(app, cfg)
+        self.assertNotIn("'priorityClassName'", str(info.request.resource))
+
     @patch("kubernetes.client.CustomObjectsApi.create_namespaced_custom_object")
     def test_submit(self, create_namespaced_custom_object: MagicMock) -> None:
         create_namespaced_custom_object.return_value = {
