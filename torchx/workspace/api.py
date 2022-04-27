@@ -7,9 +7,9 @@
 import abc
 import fnmatch
 import posixpath
-from typing import TYPE_CHECKING, Iterable, Mapping, Tuple
+from typing import Iterable, Mapping, Tuple, TYPE_CHECKING
 
-from torchx.specs import Role, CfgVal
+from torchx.specs import CfgVal, Role
 
 if TYPE_CHECKING:
     from fsspec import AbstractFileSystem
@@ -50,6 +50,8 @@ class Workspace(abc.ABC):
 
 def _ignore(s: str, patterns: Iterable[str]) -> bool:
     match = False
+    if s in (".", "Dockerfile.torchx"):
+        return False
     for pattern in patterns:
         if pattern.startswith("!") and fnmatch.fnmatch(s, pattern[1:]):
             match = False

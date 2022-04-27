@@ -9,11 +9,8 @@ import unittest
 from unittest.mock import MagicMock
 
 import fsspec
-from torchx.specs import Role, AppDef
-from torchx.workspace.docker_workspace import (
-    DockerWorkspace,
-    _build_context,
-)
+from torchx.specs import AppDef, Role
+from torchx.workspace.docker_workspace import _build_context, DockerWorkspace
 
 
 def has_docker() -> bool:
@@ -175,3 +172,23 @@ class DockerWorkspaceMockTest(unittest.TestCase):
                         "unignore",
                     },
                 )
+                self.assertGreater(tf.getmember("Dockerfile.torchx").size, 0)
+
+    def test_dockerignore_include(self) -> None:
+        fs = fsspec.filesystem("memory")
+        files = [
+            "dockerignore/Dockerfile.torchx",
+            "dockerignore/timm_app.py",
+            "dockerignore/bigfile",
+        ]
+        for file in files:
+            fs.touch(file)
+        with fs.open("dockerignore/.dockerignore", "wt") as f:
+            f.write("*\n!timm_app.py\n")
+
+        with _build_context("img", "memory://dockerignore") as f:
+            with tarfile.open(fileobj=f, mode="r") as tf:
+                self.assertCountEqual(
+                    tf.getnames(), {"Dockerfile.torchx", "timm_app.py"}
+                )
+                self.assertEqual(tf.getmember("Dockerfile.torchx").size, 0)
